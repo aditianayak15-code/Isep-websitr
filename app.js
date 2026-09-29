@@ -229,6 +229,17 @@ class IsepArchiveApp {
       }
     });
 
+    // Active classes on mobile / responsive sub-navigation
+    document.querySelectorAll('.xl\\:hidden [data-path]').forEach(link => {
+      if (link.getAttribute('data-path') === route) {
+        link.className = "text-xs uppercase tracking-wider text-primary px-2.5 py-1 rounded bg-surface-container whitespace-nowrap font-semibold";
+        link.setAttribute('aria-current', 'page');
+      } else {
+        link.className = "text-xs uppercase tracking-wider text-on-surface-variant hover:text-on-surface px-2.5 py-1 rounded whitespace-nowrap";
+        link.removeAttribute('aria-current');
+      }
+    });
+
     // Refresh dynamic views on route enter
     if (route === 'admin-portal') {
       this.renderAdminView();
