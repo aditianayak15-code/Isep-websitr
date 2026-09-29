@@ -1,0 +1,1342 @@
+/**
+ * ISEP Batch 1 Archive — Supabase-Powered Real-Time Archive
+ * - All data stored and fetched from Supabase (no local mock data)
+ * - View-Only Protection (no download buttons, right-click disabled)
+ * - Thoughts moderation: pending → approved by admin before appearing publicly
+ * - Admin CRUD via Supabase authenticated operations
+ */
+
+// ================= SUPABASE CLIENT INIT =================
+const SUPABASE_URL = 'https://qilreacksziadajadkji.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpbHJlYWNrc3ppYWRhamFka2ppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2NzExNjIsImV4cCI6MjEwNjI0NzE2Mn0.8XPjdAfSzwCFCRLPp7SNw9RylViB_lbmXnQb12gqI2g';
+
+// Initialize Supabase client (loaded via CDN in index.html)
+const _sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+// Helper: fetch from Supabase table with optional filter
+async function sbFetch(table, filter = {}) {
+  if (!_sb) return [];
+  let q = _sb.from(table).select('*');
+  Object.entries(filter).forEach(([col, val]) => { q = q.eq(col, val); });
+  const { data, error } = await q;
+  if (error) { console.warn(`[Supabase] ${table}:`, error.message); return []; }
+  return data || [];
+}
+
+// Helper: insert a row
+async function sbInsert(table, row) {
+  if (!_sb) return null;
+  const { data, error } = await _sb.from(table).insert([row]).select().single();
+  if (error) { console.warn(`[Supabase Insert] ${table}:`, error.message); return null; }
+  return data;
+}
+
+// Helper: update a row by id
+async function sbUpdate(table, id, changes) {
+  if (!_sb) return null;
+  const { data, error } = await _sb.from(table).update(changes).eq('id', id).select().single();
+  if (error) { console.warn(`[Supabase Update] ${table}:`, error.message); return null; }
+  return data;
+}
+
+// Helper: delete a row by id
+async function sbDelete(table, id) {
+  if (!_sb) return false;
+  const { error } = await _sb.from(table).delete().eq('id', id);
+  if (error) { console.warn(`[Supabase Delete] ${table}:`, error.message); return false; }
+  return true;
+}
+
+// Uploads a File object to Supabase Storage ('archive-media' bucket)
+// Automatically falls back to Base64 Data URL if storage is unavailable
+async function uploadMediaFile(file, folder = 'general') {
+  if (!file) return '';
+
+  const ext = file.name.split('.').pop() || 'bin';
+  const cleanBaseName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const filePath = `${folder}/${Date.now()}_${cleanBaseName}.${ext}`;
+
+  if (_sb && _sb.storage) {
+    try {
+      const { data, error } = await _sb.storage.from('archive-media').upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: true
+      });
+      if (!error && data) {
+        const { data: { publicUrl } } = _sb.storage.from('archive-media').getPublicUrl(filePath);
+        if (publicUrl) return publicUrl;
+      } else if (error) {
+        console.warn('[Supabase Storage upload warning]:', error.message);
+      }
+    } catch (err) {
+      console.warn('[Supabase Storage upload exception]:', err);
+    }
+  }
+
+  // Resilient fallback: read as Base64 Data URL
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(file);
+  });
+}
+
+// Map Supabase snake_case rows → app camelCase shape
+function mapPhoto(r) { return { _id: r.id, title: r.title, caption: r.caption || '', album: r.album, imageUrl: r.image_url, uploadedAt: r.uploaded_at }; }
+function mapCert(r) { return { _id: r.id, title: r.title, recipientName: r.recipient_name, issueDate: r.issue_date, category: r.category, fileUrl: r.file_url }; }
+
+function mapThought(r) { return { _id: r.id, name: r.name, message: r.message, rating: r.rating, status: r.status, createdAt: r.created_at }; }
+
+// Clear any stale localStorage cache
+['isep_photos','isep_certificates','isep_thoughts'].forEach(k => localStorage.removeItem(k));
+
+
+// ================= APP CLASS =================
+
+class IsepArchiveApp {
+  constructor() {
+    this.currentRoute = 'home';
+    this.exhibitMode = 'warm-amber';
+    this.isAdmin = localStorage.getItem('isep_admin_token') ? true : false;
+    this.selectedRating = 5;
+
+    // Start empty — data loads async from Supabase
+    this.photos = [];
+    this.certificates = [];
+    this.thoughts = [];
+
+    this.init();
+  }
+
+  init() {
+    this.initRouter();
+    this.initExhibitMode();
+    this.initViewOnlyProtection();
+    this.initHeroParallax();
+    this.initGallery();
+    this.initCertificates();
+    this.initThoughtsWall();
+    this.initAdminPortal();
+    if (_sb) {
+      _sb.auth.getSession().then(async ({ data }) => {
+        if (data?.session) {
+          // Verify the user is still approved before restoring admin session
+          const userEmail = data.session.user?.email;
+          try {
+            const { data: adminRow } = await _sb
+              .from('admin_users')
+              .select('is_approved')
+              .eq('email', userEmail)
+              .single();
+            if (adminRow?.is_approved === true) {
+              this.isAdmin = true;
+              const emailEl = document.getElementById('admin-active-email');
+              if (emailEl) emailEl.textContent = userEmail;
+              this.updateAdminHeaderStatus();
+              this.renderAdminView();
+            } else {
+              // Not yet approved — sign out silently
+              await _sb.auth.signOut();
+              localStorage.removeItem('isep_admin_token');
+            }
+          } catch(e) {
+            console.warn('[Auth restore] approval check failed', e);
+          }
+        }
+      }).catch(() => {});
+    }
+    this.loadAllFromSupabase(); // async: fetches real data then re-renders
+    this.updateAdminHeaderStatus();
+  }
+
+  async loadAllFromSupabase() {
+    this.showLoadingState(true);
+    try {
+      const [photos, certs, thoughts] = await Promise.all([
+        sbFetch('photos').then(rows => rows.map(mapPhoto)),
+        sbFetch('certificates').then(rows => rows.map(mapCert)),
+        sbFetch('thoughts', { status: 'approved' }).then(rows => rows.map(mapThought))
+      ]);
+      this.photos = photos;
+      this.certificates = certs;
+      this.thoughts = thoughts;
+    } catch(e) {
+      console.error('[Supabase] Load error:', e);
+    }
+    this.showLoadingState(false);
+    this.renderAll();
+    this.updateHomeStats();
+  }
+
+  async loadAllThoughtsForAdmin() {
+    // Admin sees all thoughts (pending + approved + hidden)
+    const rows = await sbFetch('thoughts');
+    return rows.map(mapThought);
+  }
+
+  showLoadingState(on) {
+    const el = document.getElementById('global-loading-indicator');
+    if (el) el.classList.toggle('hidden', !on);
+  }
+
+  // saveData is now a no-op — writes go directly to Supabase per operation
+  saveData(key) { /* Supabase handles persistence */ }
+
+  // --- Router & History Navigation ---
+  initRouter() {
+    const handleRoute = () => {
+      const hash = window.location.hash.replace('#', '') || 'home';
+      const valid = ['home', 'gallery', 'certificates', 'thoughts-wall', 'admin-portal'];
+      this.navigateTo(valid.includes(hash) ? hash : 'home', false);
+    };
+
+    window.addEventListener('hashchange', handleRoute);
+
+    document.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-path]');
+      if (el) {
+        e.preventDefault();
+        const path = el.getAttribute('data-path');
+        this.navigateTo(path, true);
+      }
+    });
+
+    handleRoute();
+  }
+
+  navigateTo(route, updateHistory = true) {
+    this.currentRoute = route;
+    if (updateHistory) {
+      window.location.hash = route;
+    }
+
+    document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
+    const target = document.getElementById(`view-${route}`);
+    if (target) {
+      target.classList.add('active');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // Active classes on desktop nav
+    document.querySelectorAll('nav [data-path]').forEach(link => {
+      if (link.getAttribute('data-path') === route) {
+        link.className = "px-space-md py-space-xs transition-all bg-primary-container text-on-primary-container font-semibold rounded-lg shadow-sm";
+        link.setAttribute('aria-current', 'page');
+      } else {
+        link.className = "px-space-md py-space-xs text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-body-sm text-body-sm transition-all rounded-lg";
+        link.removeAttribute('aria-current');
+      }
+    });
+
+    // Refresh dynamic views on route enter
+    if (route === 'admin-portal') {
+      this.renderAdminView();
+    } else if (route === 'home') {
+      this.updateHomeStats();
+    }
+  }
+
+  // --- View-Only Protection Feature (Security Requirement) ---
+  initViewOnlyProtection() {
+    // Disable right-click menu on all images to prevent casual downloading
+    document.addEventListener('contextmenu', (e) => {
+      if (e.target.tagName === 'IMG' || e.target.closest('.view-only-image') || e.target.closest('.modal-view-only')) {
+        e.preventDefault();
+        this.showToast('View-only archive: direct file saving is restricted.');
+      }
+    });
+
+    // Disable dragging on images
+    document.addEventListener('dragstart', (e) => {
+      if (e.target.tagName === 'IMG') {
+        e.preventDefault();
+      }
+    });
+  }
+
+  // --- Exhibit Mode Toggle ---
+  initExhibitMode() {
+    document.querySelectorAll('.toggle-exhibit-lighting').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (this.exhibitMode === 'warm-amber') {
+          this.exhibitMode = 'moonlight';
+          document.body.classList.remove('mode-warm-amber');
+          document.body.classList.add('mode-moonlight');
+        } else {
+          this.exhibitMode = 'warm-amber';
+          document.body.classList.remove('mode-moonlight');
+          document.body.classList.add('mode-warm-amber');
+        }
+
+        document.querySelectorAll('.exhibit-mode-label').forEach(el => {
+          el.textContent = this.exhibitMode === 'warm-amber' ? 'Warm Amber' : 'Moonlight Blue';
+        });
+      });
+    });
+  }
+
+  // --- 3D Hero Parallax Interaction ---
+  initHeroParallax() {
+    const deck = document.getElementById('memory-deck-wrapper');
+    const heroCard = document.getElementById('interactive-hero-card');
+
+    if (deck && heroCard) {
+      deck.addEventListener('mousemove', (e) => {
+        const rect = deck.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+
+        const rotateX = ((y - centerY) / centerY) * -10;
+        const rotateY = ((x - centerX) / centerX) * 14;
+
+        heroCard.style.transform = `rotateY(${rotateY}deg) rotateX(${rotateX}deg) rotateZ(1deg) scale(1.02)`;
+      });
+
+      deck.addEventListener('mouseleave', () => {
+        heroCard.style.transform = 'rotateY(-10deg) rotateX(6deg) rotateZ(2deg) scale(1)';
+      });
+    }
+  }
+
+  // --- Home Stats Sync ---
+  updateHomeStats() {
+    const photosCountEl = document.getElementById('home-stat-photos');
+    const certsCountEl = document.getElementById('home-stat-certs');
+    const thoughtsCountEl = document.getElementById('home-stat-thoughts');
+
+    if (photosCountEl) photosCountEl.textContent = this.photos.length;
+    if (certsCountEl) certsCountEl.textContent = this.certificates.length;
+    if (thoughtsCountEl) thoughtsCountEl.textContent = this.thoughts.filter(t => t.status === 'approved').length;
+  }
+
+  // --- Photo Gallery Logic (Pavilion I) ---
+  initGallery() {
+    const searchInput = document.getElementById('gallery-search-input');
+    const filterButtons = document.querySelectorAll('.gallery-filter-btn');
+
+    const filterGallery = () => {
+      const q = (searchInput?.value || '').toLowerCase().trim();
+      const activeBtn = document.querySelector('.gallery-filter-btn.active-gallery-filter');
+      const activeAlbum = activeBtn ? activeBtn.getAttribute('data-album') : 'all';
+
+      const filtered = this.photos.filter(p => {
+        const matchesAlbum = activeAlbum === 'all' || p.album.toLowerCase() === activeAlbum.toLowerCase();
+        const matchesQuery = !q ||
+          p.title.toLowerCase().includes(q) ||
+          p.caption.toLowerCase().includes(q) ||
+          p.album.toLowerCase().includes(q);
+        return matchesAlbum && matchesQuery;
+      });
+
+      this.renderGalleryGrid(filtered);
+    };
+
+    if (searchInput) searchInput.addEventListener('input', filterGallery);
+
+    filterButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        filterButtons.forEach(b => {
+          b.className = "gallery-filter-btn flex items-center gap-space-xs px-space-md py-space-xs rounded-full bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface font-label-md text-label-md uppercase tracking-wider transition-all flex-shrink-0 cursor-pointer";
+        });
+        btn.className = "gallery-filter-btn active-gallery-filter flex items-center gap-space-xs px-space-md py-space-xs rounded-full bg-primary-container text-on-primary-container font-label-md text-label-md uppercase tracking-wider shadow-sm transition-all flex-shrink-0 cursor-pointer";
+        filterGallery();
+      });
+    });
+
+    // Lightbox modal close
+    const modal = document.getElementById('museum-lightbox-modal');
+    if (modal) {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal || e.target.closest('[data-close-lightbox]')) {
+          modal.classList.add('hidden');
+        }
+      });
+    }
+  }
+
+  renderGalleryGrid(photos) {
+    const container = document.getElementById('gallery-masonry-grid');
+    if (!container) return;
+
+    if (photos.length === 0) {
+      container.innerHTML = `
+        <div class="col-span-12 py-space-xl text-center flex flex-col items-center justify-center">
+          <span class="material-symbols-outlined text-outline text-[48px] mb-space-sm">photo_library</span>
+          <p class="font-headline-sm text-on-surface font-serif">No archive photos match this query</p>
+          <p class="font-body-sm text-on-surface-variant mt-1">Try another search keyword or switch to 'All Photos'.</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = photos.map((p, index) => {
+      const isWide = index % 3 === 0;
+      const colSpan = isWide ? 'lg:col-span-7' : 'lg:col-span-5';
+      const aspect = isWide ? 'aspect-[16/10]' : 'aspect-[4/3]';
+
+      return `
+        <article class="${colSpan} flex flex-col bg-surface-container rounded-xl overflow-hidden shadow-[0_16px_36px_-8px_rgba(0,0,0,0.65)] hover:shadow-[0_20px_40px_-4px_rgba(212,162,76,0.22)] transition-all group border border-outline-variant/15">
+          <div class="relative bg-surface-container-lowest p-space-sm corner-reticle view-only-image">
+            <div class="overflow-hidden rounded-lg ${aspect} bg-surface-container-high relative">
+              <img alt="${p.title}" class="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-700 brightness-95 group-hover:brightness-100 select-none pointer-events-none" src="${p.imageUrl}" loading="lazy" draggable="false"/>
+              <div class="absolute bottom-space-xs right-space-xs px-2 py-0.5 rounded bg-surface/85 backdrop-blur-md text-[10px] font-mono tracking-widest text-primary/80 uppercase">
+                ${p.album}
+              </div>
+            </div>
+          </div>
+          <div class="p-space-md flex flex-col justify-between flex-1 bg-surface-container">
+            <div class="flex flex-col gap-space-xs">
+              <div class="flex items-center justify-between text-outline">
+                <span class="font-label-sm text-label-sm uppercase tracking-widest text-primary font-semibold">${p.album}</span>
+                <span class="font-label-sm text-label-sm uppercase tracking-widest">${p.uploadedAt}</span>
+              </div>
+              <h2 class="font-headline-md text-headline-md text-on-surface font-serif font-bold">
+                ${p.title}
+              </h2>
+              <p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">
+                ${p.caption}
+              </p>
+            </div>
+            <div class="mt-space-md pt-space-sm flex items-center justify-between bg-surface-container-low px-space-sm py-space-xs rounded-lg border border-outline-variant/15">
+              <span class="font-label-sm text-label-sm text-on-surface-variant flex items-center gap-1">
+                <span class="material-symbols-outlined text-[16px] text-primary">visibility</span>
+                View-Only Public Access
+              </span>
+              <button class="flex items-center gap-1 font-label-md text-label-md uppercase tracking-wider text-primary hover:text-primary-fixed transition-colors cursor-pointer" onclick="window.app.openLightbox('${p._id}')">
+                <span>View Full Screen</span>
+                <span class="material-symbols-outlined text-[16px]">fullscreen</span>
+              </button>
+            </div>
+          </div>
+        </article>
+      `;
+    }).join('');
+  }
+
+  openLightbox(photoId) {
+    const photo = this.photos.find(p => p._id === photoId);
+    if (!photo) return;
+
+    const modal = document.getElementById('museum-lightbox-modal');
+    if (!modal) return;
+
+    document.getElementById('lightbox-image').src = photo.imageUrl;
+    document.getElementById('lightbox-plate-id').textContent = photo.title;
+    document.getElementById('lightbox-recorded').textContent = photo.uploadedAt;
+    document.getElementById('lightbox-location').textContent = photo.album;
+    document.getElementById('lightbox-caption').textContent = photo.caption;
+
+    modal.classList.remove('hidden');
+  }
+
+  // --- Certificates Logic (Pavilion II) ---
+  initCertificates() {
+    const searchInput = document.getElementById('fellowSearchInput');
+    const filterButtons = document.querySelectorAll('.cert-filter-chip');
+
+    const filterCerts = () => {
+      const q = (searchInput?.value || '').toLowerCase().trim();
+      const activeBtn = document.querySelector('.cert-filter-chip.active');
+      const activeCat = activeBtn ? activeBtn.getAttribute('data-cat') : 'all';
+
+      const filtered = this.certificates.filter(c => {
+        const matchesCat = activeCat === 'all' || (c.category && c.category.toLowerCase() === activeCat.toLowerCase());
+        const matchesQuery = !q ||
+          c.recipientName.toLowerCase().includes(q) ||
+          c.title.toLowerCase().includes(q);
+        return matchesCat && matchesQuery;
+      });
+
+      this.renderCertificatesGrid(filtered);
+    };
+
+    if (searchInput) searchInput.addEventListener('input', filterCerts);
+
+    filterButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        filterButtons.forEach(b => {
+          b.className = "cert-filter-chip px-space-md py-space-xs rounded-full bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-label-md text-label-md font-medium transition-all whitespace-nowrap cursor-pointer";
+        });
+        btn.className = "cert-filter-chip active px-space-md py-space-xs rounded-full bg-primary text-on-primary font-label-md text-label-md font-semibold transition-all whitespace-nowrap shadow-md cursor-pointer";
+        filterCerts();
+      });
+    });
+
+    const certModal = document.getElementById('certificate-inspect-modal');
+    if (certModal) {
+      certModal.addEventListener('click', (e) => {
+        if (e.target === certModal || e.target.closest('[data-close-cert-modal]')) {
+          certModal.classList.add('hidden');
+        }
+      });
+    }
+  }
+
+  renderCertificatesGrid(certs) {
+    const container = document.getElementById('certificates-grid-container');
+    if (!container) return;
+
+    if (certs.length === 0) {
+      container.innerHTML = `
+        <div class="col-span-2 py-space-xl text-center flex flex-col items-center justify-center">
+          <span class="material-symbols-outlined text-outline text-[48px] mb-space-sm">school</span>
+          <p class="font-headline-sm text-on-surface font-serif">No certificates match your query</p>
+          <p class="font-body-sm text-on-surface-variant mt-1">Please try searching by a different intern or award title.</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = certs.map(c => `
+      <div class="group relative flex flex-col bg-surface-container rounded-xl p-2 shadow-[0_20px_45px_rgba(0,0,0,0.65)] hover:-translate-y-1 hover:shadow-[0_24px_50px_rgba(212,162,76,0.18)] transition-all duration-300 border border-outline-variant/15">
+        <div class="relative w-full rounded-lg bg-surface-container-low p-space-lg flex flex-col justify-between overflow-hidden min-h-[440px]">
+          <!-- Inner Corner Filigree Accents -->
+          <div class="absolute top-3 left-3 w-4 h-4 bg-primary/20 rounded-tl-sm pointer-events-none"></div>
+          <div class="absolute top-3 right-3 w-4 h-4 bg-primary/20 rounded-tr-sm pointer-events-none"></div>
+          <div class="absolute bottom-3 left-3 w-4 h-4 bg-primary/20 rounded-bl-sm pointer-events-none"></div>
+          <div class="absolute bottom-3 right-3 w-4 h-4 bg-primary/20 rounded-br-sm pointer-events-none"></div>
+
+          <!-- Document Top: Organization & Emblem -->
+          <div class="flex items-start justify-between relative z-10">
+            <div class="flex items-center gap-space-sm">
+              <div class="w-10 h-10 rounded-full bg-primary-container/20 flex items-center justify-center text-primary">
+                <span class="material-symbols-outlined text-[24px]">school</span>
+              </div>
+              <div class="flex flex-col">
+                <span class="font-label-sm text-label-sm tracking-widest uppercase text-primary font-bold">ISEP Internship Program</span>
+                <span class="font-label-sm text-label-sm text-on-surface-variant font-mono">RECORD ID: ${c._id.toUpperCase()}</span>
+              </div>
+            </div>
+            
+            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary via-tertiary-container to-on-primary-container flex items-center justify-center shadow-lg relative">
+              <span class="material-symbols-outlined text-on-primary text-[22px]">verified</span>
+              <div class="absolute -bottom-2 w-3 h-5 bg-tertiary-container rounded-b-sm shadow-sm"></div>
+            </div>
+          </div>
+
+          <!-- Document Middle: Recipient & Award -->
+          <div class="my-space-lg relative z-10 flex flex-col items-center text-center px-space-md">
+            <span class="font-label-sm text-label-sm uppercase tracking-[0.25em] text-on-surface-variant mb-space-xs font-semibold">${c.title}</span>
+            <h2 class="font-headline-lg text-headline-lg text-primary tracking-tight mb-space-xs font-serif font-bold">
+              ${c.recipientName}
+            </h2>
+            <div class="w-16 h-[2px] bg-primary/30 my-space-xs"></div>
+            <p class="font-body-md text-body-md text-on-surface max-w-lg mb-space-sm">
+              Presented in recognition of dedicated contribution, rigorous engineering excellence, and successful completion of the ISEP Batch 1 Internship Program.
+            </p>
+          </div>
+
+          <!-- Document Footer: Issue Date & View Only Modal Action -->
+          <div class="relative z-10 pt-space-md mt-auto border-t border-outline-variant/20 flex items-center justify-between">
+            <span class="font-label-sm text-label-sm text-on-surface-variant">Conferred: <span class="text-on-surface font-medium">${c.issueDate}</span></span>
+            <button class="inline-flex items-center gap-space-xs px-space-md py-space-xs rounded-lg bg-surface-container-highest hover:bg-primary-container hover:text-on-primary-container text-on-surface text-body-sm font-body-sm transition-all group-hover:bg-primary group-hover:text-on-primary font-medium cursor-pointer" onclick="window.app.inspectCertificate('${c._id}')">
+              <span class="material-symbols-outlined text-[16px]">visibility</span>
+              <span>View-Only Preview</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  inspectCertificate(certId) {
+    const cert = this.certificates.find(c => c._id === certId);
+    if (!cert) return;
+
+    const modal = document.getElementById('certificate-inspect-modal');
+    if (!modal) return;
+
+    document.getElementById('inspect-modal-name').textContent = cert.recipientName;
+    document.getElementById('inspect-modal-id').textContent = cert._id.toUpperCase();
+    document.getElementById('inspect-modal-title').textContent = cert.title;
+    document.getElementById('inspect-modal-date').textContent = cert.issueDate;
+
+    const fileWrapper = document.getElementById('inspect-modal-file-wrapper');
+    const fileImg = document.getElementById('inspect-modal-file-img');
+    const filePdf = document.getElementById('inspect-modal-file-pdf');
+
+    if (fileWrapper && fileImg && filePdf) {
+      if (cert.fileUrl) {
+        fileWrapper.classList.remove('hidden');
+        if (cert.fileUrl.endsWith('.pdf') || cert.fileUrl.includes('application/pdf')) {
+          fileImg.classList.add('hidden');
+          filePdf.classList.remove('hidden');
+          filePdf.src = cert.fileUrl;
+        } else {
+          filePdf.classList.add('hidden');
+          fileImg.classList.remove('hidden');
+          fileImg.src = cert.fileUrl;
+        }
+      } else {
+        fileWrapper.classList.add('hidden');
+        fileImg.src = '';
+        filePdf.src = '';
+      }
+    }
+
+    modal.classList.remove('hidden');
+  }
+
+  // --- (Pavilion III: Achievements/Milestones feature removed per user request) ---
+  renderAchievements() { /* no-op: achievements feature removed */ }
+
+
+  // --- Thoughts Wall Logic (Pavilion IV) ---
+  initThoughtsWall() {
+    const openPinBtn = document.getElementById('open-pin-drawer-btn');
+    const pinModal = document.getElementById('pin-reflection-modal');
+    const pinForm = document.getElementById('pin-reflection-form');
+
+    if (openPinBtn && pinModal) {
+      openPinBtn.addEventListener('click', () => pinModal.classList.remove('hidden'));
+      pinModal.addEventListener('click', (e) => {
+        if (e.target === pinModal || e.target.closest('[data-close-pin-modal]')) {
+          pinModal.classList.add('hidden');
+        }
+      });
+    }
+
+    // Star rating picker
+    const starButtons = document.querySelectorAll('.star-rating-select-btn');
+    starButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const rating = parseInt(btn.getAttribute('data-star'), 10);
+        this.selectedRating = rating;
+        starButtons.forEach(b => {
+          const val = parseInt(b.getAttribute('data-star'), 10);
+          b.classList.toggle('text-primary', val <= rating);
+          b.classList.toggle('text-outline', val > rating);
+        });
+      });
+    });
+
+    if (pinForm) {
+      pinForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = document.getElementById('pin-author').value.trim();
+        const message = document.getElementById('pin-quote').value.trim();
+        if (!name || !message) return;
+
+        // Thoughts default to 'pending' — go live only after admin approval
+        const saved = await sbInsert('thoughts', {
+          name,
+          message,
+          rating: this.selectedRating || 5,
+          status: 'pending'
+        });
+
+        pinForm.reset();
+        pinModal.classList.add('hidden');
+
+        if (saved) {
+          this.showToast('Thank you! Your thought has been submitted for coordinator review and will be published once approved.');
+        } else {
+          this.showToast('Submission failed — please try again.');
+        }
+      });
+    }
+  }
+
+  renderThoughtsWall() {
+    const container = document.getElementById('memos-grid');
+    if (!container) return;
+
+    // Visitors only see APPROVED thoughts
+    const approved = this.thoughts.filter(t => t.status === 'approved');
+
+    if (approved.length === 0) {
+      container.innerHTML = `
+        <div class="col-span-3 py-space-xl text-center flex flex-col items-center justify-center">
+          <span class="material-symbols-outlined text-outline text-[48px] mb-space-sm">forum</span>
+          <p class="font-headline-sm text-on-surface font-serif">The Thoughts Wall is waiting for reflections</p>
+          <p class="font-body-sm text-on-surface-variant mt-1">Be the first visitor to share your message with Batch 1.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const rotations = ['-1.5deg', '1.2deg', '-2deg', '2deg', '-0.8deg', '1.5deg'];
+
+    container.innerHTML = approved.map((t, idx) => {
+      const rot = rotations[idx % rotations.length];
+      const isEven = idx % 2 === 0;
+      const cardBg = isEven ? 'bg-surface-container text-on-surface' : 'parchment-card text-on-secondary-fixed';
+      const authorColor = isEven ? 'text-primary' : 'text-on-secondary-fixed font-bold';
+      const roleColor = isEven ? 'text-on-surface-variant' : 'text-on-secondary-fixed/70';
+
+      const stars = '★'.repeat(t.rating || 5) + '☆'.repeat(5 - (t.rating || 5));
+
+      return `
+        <div class="memo-item group relative ${cardBg} p-space-lg rounded-xl shadow-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl" style="transform: rotate(${rot}); transform-origin: top center;">
+          <!-- Brass Pushpin -->
+          <div class="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-primary-container flex items-center justify-center shadow-md border-2 border-surface-container-lowest">
+            <div class="w-1.5 h-1.5 rounded-full bg-on-primary"></div>
+          </div>
+          
+          <div class="flex items-center justify-between gap-space-xs mb-space-sm">
+            <span class="text-primary font-mono text-sm tracking-wider">${stars}</span>
+            <span class="font-label-sm text-label-sm ${roleColor}">${t.createdAt}</span>
+          </div>
+
+          <p class="font-headline-sm text-[18px] leading-snug mb-space-md italic font-serif">
+            “${t.message}”
+          </p>
+
+          <div class="flex items-center justify-between pt-space-sm border-t ${isEven ? 'border-outline-variant/20' : 'border-on-secondary-fixed/20'}">
+            <div class="flex flex-col">
+              <span class="font-headline-sm text-[16px] ${authorColor}">${t.name}</span>
+              <span class="font-body-sm text-body-sm ${roleColor}">Verified Visitor / Scholar</span>
+            </div>
+            <span class="material-symbols-outlined text-primary/70 text-[20px]">format_quote</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const countEl = document.getElementById('thoughts-count-indicator');
+    if (countEl) countEl.textContent = `${approved.length} Public Reflections`;
+  }
+
+  // --- Admin Portal Logic (Auth, CRUD, Moderation) ---
+
+  // Helper: show a feedback alert inside the auth card
+  _showAuthAlert(msg, type = 'error') {
+    const el = document.getElementById('admin-auth-alert');
+    if (!el) return;
+    const colors = {
+      error:   'bg-error-container border-error/40 text-on-error-container',
+      success: 'bg-primary/10 border-primary/40 text-on-surface',
+      warn:    'bg-surface-container-low border-outline-variant/40 text-on-surface-variant'
+    };
+    const icon = { error: 'error', success: 'check_circle', warn: 'info' };
+    el.className = `mb-space-md p-3 rounded-lg text-xs flex items-start gap-2 border ${colors[type] || colors.error}`;
+    el.innerHTML = `<span class="material-symbols-outlined text-[16px] shrink-0">${icon[type] || 'error'}</span><span>${msg}</span>`;
+    el.classList.remove('hidden');
+  }
+  _hideAuthAlert() {
+    const el = document.getElementById('admin-auth-alert');
+    if (el) el.classList.add('hidden');
+  }
+
+  initAdminPortal() {
+    // --- Auth Tab Switching ---
+    const switchToLogin = () => {
+      this._hideAuthAlert();
+      document.getElementById('admin-login-form')?.classList.remove('hidden');
+      document.getElementById('admin-register-form')?.classList.add('hidden');
+      document.getElementById('auth-tab-login')?.classList.add('bg-primary', 'text-on-primary', 'shadow-sm');
+      document.getElementById('auth-tab-login')?.classList.remove('text-on-surface-variant');
+      document.getElementById('auth-tab-register')?.classList.remove('bg-primary', 'text-on-primary', 'shadow-sm');
+      document.getElementById('auth-tab-register')?.classList.add('text-on-surface-variant');
+    };
+    const switchToRegister = () => {
+      this._hideAuthAlert();
+      document.getElementById('admin-login-form')?.classList.add('hidden');
+      document.getElementById('admin-register-form')?.classList.remove('hidden');
+      document.getElementById('auth-tab-register')?.classList.add('bg-primary', 'text-on-primary', 'shadow-sm');
+      document.getElementById('auth-tab-register')?.classList.remove('text-on-surface-variant');
+      document.getElementById('auth-tab-login')?.classList.remove('bg-primary', 'text-on-primary', 'shadow-sm');
+      document.getElementById('auth-tab-login')?.classList.add('text-on-surface-variant');
+    };
+    document.getElementById('auth-tab-login')?.addEventListener('click', switchToLogin);
+    document.getElementById('auth-tab-register')?.addEventListener('click', switchToRegister);
+    document.getElementById('auth-link-login')?.addEventListener('click', switchToLogin);
+    document.getElementById('auth-link-register')?.addEventListener('click', switchToRegister);
+
+    // --- Sign In Form ---
+    const loginForm = document.getElementById('admin-login-form');
+    if (loginForm) {
+      loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        this._hideAuthAlert();
+        const email = document.getElementById('admin-email').value.trim().toLowerCase();
+        const pass  = document.getElementById('admin-password').value;
+        const btn   = document.getElementById('admin-login-submit-btn');
+        if (btn) { btn.disabled = true; btn.querySelector('.btn-text').textContent = 'Signing in…'; }
+
+        try {
+          if (!_sb) throw new Error('Supabase not available.');
+
+          // 1. Sign in with Supabase Auth
+          const { data, error } = await _sb.auth.signInWithPassword({ email, password: pass });
+          if (error) throw error;
+
+          // 2. Check database approval
+          const { data: adminRow, error: dbErr } = await _sb
+            .from('admin_users')
+            .select('is_approved, full_name')
+            .eq('email', email)
+            .single();
+
+          if (dbErr || !adminRow) {
+            // Authenticated but no admin_users record — sign out
+            await _sb.auth.signOut();
+            this._showAuthAlert('Your account was not found in the coordinator database. Please register first or contact the administrator.', 'error');
+            return;
+          }
+
+          if (!adminRow.is_approved) {
+            // Not yet approved — sign out and explain
+            await _sb.auth.signOut();
+            this._showAuthAlert(
+              'Your account is pending approval by the database administrator. Once approved, you can sign in here. Please contact the administrator to approve your access in the <strong>admin_users</strong> table.',
+              'warn'
+            );
+            return;
+          }
+
+          // 3. Approved — grant access
+          localStorage.setItem('isep_admin_token', data.session.access_token);
+          this.isAdmin = true;
+          const emailEl = document.getElementById('admin-active-email');
+          if (emailEl) emailEl.textContent = email;
+          this.updateAdminHeaderStatus();
+          await this.loadAllThoughtsForAdmin();
+          this.renderAdminView();
+          this.showToast(`Welcome, ${adminRow.full_name || 'Coordinator'}. Logged into Archival Directorate.`);
+
+        } catch (err) {
+          console.warn('[Admin Login]', err.message);
+          const msg = err.message?.includes('Email not confirmed')
+            ? 'Please verify your email address before signing in. Check your inbox for the verification link.'
+            : err.message?.includes('Invalid login credentials')
+            ? 'Incorrect email or password. Please try again.'
+            : `Sign-in failed: ${err.message}`;
+          this._showAuthAlert(msg, 'error');
+        } finally {
+          if (btn) { btn.disabled = false; btn.querySelector('.btn-text').textContent = 'Sign In to Control Panel'; }
+        }
+      });
+    }
+
+    // --- Request Access / Register Form ---
+    const registerForm = document.getElementById('admin-register-form');
+    if (registerForm) {
+      registerForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        this._hideAuthAlert();
+        const fullName = document.getElementById('admin-reg-name').value.trim();
+        const email    = document.getElementById('admin-reg-email').value.trim().toLowerCase();
+        const pass     = document.getElementById('admin-reg-password').value;
+        const confirm  = document.getElementById('admin-reg-confirm').value;
+        const btn      = document.getElementById('admin-register-submit-btn');
+
+        if (pass !== confirm) {
+          this._showAuthAlert('Passwords do not match. Please re-enter.', 'error');
+          return;
+        }
+
+        if (btn) { btn.disabled = true; btn.querySelector('.btn-text').textContent = 'Registering…'; }
+
+        try {
+          if (!_sb) throw new Error('Supabase not available.');
+
+          // Sign up via Supabase Auth (sends verification email automatically)
+          const { data, error } = await _sb.auth.signUp({
+            email,
+            password: pass,
+            options: { data: { full_name: fullName } }
+          });
+
+          if (error) throw error;
+
+          // Upsert into admin_users (trigger may also do this, but we ensure full_name is saved)
+          if (_sb && data?.user) {
+            await _sb.from('admin_users').upsert([
+              { user_id: data.user.id, email, full_name: fullName, is_approved: false }
+            ], { onConflict: 'email' });
+          }
+
+          // Show success message — user must verify email next
+          this._showAuthAlert(
+            `<strong>Registration submitted!</strong><br>A verification email has been sent to <strong>${email}</strong>.<br><br>Steps to gain access:<br>1. Click the verification link in your email.<br>2. Ask the database administrator to approve your account in the <strong>admin_users</strong> table.<br>3. Return here and sign in.`,
+            'success'
+          );
+          registerForm.reset();
+
+        } catch(err) {
+          console.warn('[Admin Register]', err.message);
+          const msg = err.message?.includes('already registered')
+            ? 'This email is already registered. Please sign in instead.'
+            : `Registration failed: ${err.message}`;
+          this._showAuthAlert(msg, 'error');
+        } finally {
+          if (btn) { btn.disabled = false; btn.querySelector('.btn-text').textContent = 'Submit Request & Register'; }
+        }
+      });
+    }
+
+    // Admin Logout
+    document.querySelectorAll('.btn-admin-logout').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (_sb) {
+          try { await _sb.auth.signOut(); } catch(e) {}
+        }
+        this.isAdmin = false;
+        localStorage.removeItem('isep_admin_token');
+        this.updateAdminHeaderStatus();
+        this.renderAdminView();
+        this.showToast('Logged out of Admin Portal.');
+      });
+    });
+
+    // Admin Tabs
+    document.querySelectorAll('.admin-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.getAttribute('data-tab');
+        document.querySelectorAll('.admin-tab-btn').forEach(b => {
+          b.className = "admin-tab-btn px-space-md py-space-xs text-on-surface-variant hover:text-on-surface rounded-lg font-body-sm transition-all";
+        });
+        btn.className = "admin-tab-btn px-space-md py-space-xs bg-primary text-on-primary font-semibold rounded-lg shadow-sm transition-all";
+
+        document.querySelectorAll('.admin-tab-panel').forEach(p => p.classList.add('hidden'));
+        const activePanel = document.getElementById(`admin-panel-${tab}`);
+        if (activePanel) activePanel.classList.remove('hidden');
+      });
+    });
+
+    // Setup Photo Dropzone & Device File Picker
+    const photoFileInput = document.getElementById('new-photo-file');
+    const photoEmptyState = document.getElementById('photo-file-empty-state');
+    const photoPreviewState = document.getElementById('photo-file-preview-state');
+    const photoPreviewImg = document.getElementById('photo-file-preview-img');
+    const photoFileName = document.getElementById('photo-file-name');
+    const photoFileSize = document.getElementById('photo-file-size');
+    const photoRemoveBtn = document.getElementById('photo-file-remove-btn');
+
+    const formatBytes = (bytes) => {
+      if (!bytes || bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    };
+
+    const handlePhotoFileSelect = (file) => {
+      if (!file || !file.type.startsWith('image/')) {
+        alert('Please select an image file (PNG, JPG, WEBP, or GIF).');
+        return;
+      }
+      if (photoFileName) photoFileName.textContent = file.name;
+      if (photoFileSize) photoFileSize.textContent = formatBytes(file.size);
+      if (photoPreviewImg) {
+        photoPreviewImg.src = URL.createObjectURL(file);
+      }
+      if (photoEmptyState) photoEmptyState.classList.add('hidden');
+      if (photoPreviewState) photoPreviewState.classList.remove('hidden');
+    };
+
+    const resetPhotoPicker = () => {
+      if (photoFileInput) photoFileInput.value = '';
+      if (photoPreviewImg) photoPreviewImg.src = '';
+      if (photoEmptyState) photoEmptyState.classList.remove('hidden');
+      if (photoPreviewState) photoPreviewState.classList.add('hidden');
+    };
+
+    if (photoFileInput) {
+      photoFileInput.addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (file) handlePhotoFileSelect(file);
+      });
+    }
+
+    if (photoRemoveBtn) {
+      photoRemoveBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        resetPhotoPicker();
+      });
+    }
+
+    // Setup Certificate Dropzone & Device File Picker
+    const certFileInput = document.getElementById('new-cert-file');
+    const certEmptyState = document.getElementById('cert-file-empty-state');
+    const certPreviewState = document.getElementById('cert-file-preview-state');
+    const certPreviewImg = document.getElementById('cert-file-preview-img');
+    const certIconBox = document.getElementById('cert-file-icon-box');
+    const certFileName = document.getElementById('cert-file-name');
+    const certFileSize = document.getElementById('cert-file-size');
+    const certRemoveBtn = document.getElementById('cert-file-remove-btn');
+
+    const handleCertFileSelect = (file) => {
+      if (!file) return;
+      if (certFileName) certFileName.textContent = file.name;
+      if (certFileSize) certFileSize.textContent = formatBytes(file.size);
+      if (file.type.startsWith('image/')) {
+        if (certPreviewImg) {
+          certPreviewImg.src = URL.createObjectURL(file);
+          certPreviewImg.classList.remove('hidden');
+        }
+        if (certIconBox) certIconBox.classList.add('hidden');
+      } else {
+        if (certPreviewImg) certPreviewImg.classList.add('hidden');
+        if (certIconBox) certIconBox.classList.remove('hidden');
+      }
+      if (certEmptyState) certEmptyState.classList.add('hidden');
+      if (certPreviewState) certPreviewState.classList.remove('hidden');
+    };
+
+    const resetCertPicker = () => {
+      if (certFileInput) certFileInput.value = '';
+      if (certPreviewImg) certPreviewImg.src = '';
+      if (certEmptyState) certEmptyState.classList.remove('hidden');
+      if (certPreviewState) certPreviewState.classList.add('hidden');
+    };
+
+    if (certFileInput) {
+      certFileInput.addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (file) handleCertFileSelect(file);
+      });
+    }
+
+    if (certRemoveBtn) {
+      certRemoveBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        resetCertPicker();
+      });
+    }
+
+    // Admin Upload Photo Form (From Device)
+    const uploadPhotoForm = document.getElementById('admin-upload-photo-form');
+    if (uploadPhotoForm) {
+      uploadPhotoForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const title = document.getElementById('new-photo-title').value.trim();
+        const album = document.getElementById('new-photo-album').value;
+        const caption = document.getElementById('new-photo-caption').value.trim();
+        const file = photoFileInput?.files?.[0];
+
+        if (!title) {
+          alert('Please enter a photo title.');
+          return;
+        }
+        if (!file) {
+          alert('Please select a photo from your device.');
+          return;
+        }
+
+        const submitBtn = uploadPhotoForm.querySelector('button[type="submit"]');
+        const origText = submitBtn ? submitBtn.innerHTML : 'Upload Photo';
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⌛</span> Uploading...';
+        }
+
+        try {
+          const imageUrl = await uploadMediaFile(file, 'photos');
+          if (!imageUrl) throw new Error('Could not process photo file.');
+
+          const saved = await sbInsert('photos', {
+            title,
+            caption: caption || '',
+            album,
+            image_url: imageUrl
+          });
+
+          if (saved) {
+            const newPhoto = mapPhoto(saved);
+            this.photos.unshift(newPhoto);
+            this.renderGalleryGrid(this.photos);
+            this.renderAdminPhotosTable();
+            this.updateHomeStats();
+            uploadPhotoForm.reset();
+            resetPhotoPicker();
+            document.getElementById('admin-upload-photo-modal').classList.add('hidden');
+            this.showToast(`Photo uploaded from device to ${album} album.`);
+          } else {
+            this.showToast('Error uploading photo to database. Check console.');
+          }
+        } catch (err) {
+          console.error(err);
+          this.showToast('Upload error: ' + err.message);
+        } finally {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = origText;
+          }
+        }
+      });
+    }
+
+    // Admin Add Certificate Form (From Device)
+    const addCertForm = document.getElementById('admin-add-cert-form');
+    if (addCertForm) {
+      addCertForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const recipientName = document.getElementById('new-cert-recipient').value.trim();
+        const title = document.getElementById('new-cert-title').value.trim();
+        const issueDate = document.getElementById('new-cert-date').value || '2026-06-28';
+        const category = document.getElementById('new-cert-category').value;
+        const file = certFileInput?.files?.[0];
+
+        if (!recipientName || !title) {
+          alert('Please provide recipient name and certificate title.');
+          return;
+        }
+
+        const submitBtn = addCertForm.querySelector('button[type="submit"]');
+        const origText = submitBtn ? submitBtn.innerHTML : 'Confer Certificate';
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⌛</span> Conferring...';
+        }
+
+        try {
+          let fileUrl = '';
+          if (file) {
+            fileUrl = await uploadMediaFile(file, 'certificates');
+          }
+
+          const saved = await sbInsert('certificates', {
+            title,
+            recipient_name: recipientName,
+            issue_date: issueDate,
+            category,
+            file_url: fileUrl || ''
+          });
+
+          if (saved) {
+            const newCert = mapCert(saved);
+            this.certificates.unshift(newCert);
+            this.renderCertificatesGrid(this.certificates);
+            this.renderAdminCertsTable();
+            this.updateHomeStats();
+            addCertForm.reset();
+            resetCertPicker();
+            document.getElementById('admin-add-cert-modal').classList.add('hidden');
+            this.showToast(`Certificate conferred for ${recipientName}.`);
+          } else {
+            this.showToast('Error issuing certificate. Check console.');
+          }
+        } catch (err) {
+          console.error(err);
+          this.showToast('Error issuing certificate: ' + err.message);
+        } finally {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = origText;
+          }
+        }
+      });
+    }
+
+    // Dismiss modals on backdrop click
+    const certModal = document.getElementById('admin-add-cert-modal');
+    if (certModal) {
+      certModal.addEventListener('click', (e) => {
+        if (e.target === certModal || e.target.classList.contains('admin-modal-dialog')) {
+          certModal.classList.add('hidden');
+        }
+      });
+    }
+
+    const photoModal = document.getElementById('admin-upload-photo-modal');
+    if (photoModal) {
+      photoModal.addEventListener('click', (e) => {
+        if (e.target === photoModal || e.target.classList.contains('admin-modal-dialog')) {
+          photoModal.classList.add('hidden');
+        }
+      });
+    }
+  }
+
+  updateAdminHeaderStatus() {
+    const adminBtn = document.getElementById('header-admin-btn');
+    if (!adminBtn) return;
+
+    if (this.isAdmin) {
+      adminBtn.innerHTML = `
+        <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+        <span class="font-label-sm text-xs font-semibold text-primary">Coordinator Active</span>
+      `;
+    } else {
+      adminBtn.innerHTML = `
+        <span class="material-symbols-outlined text-[16px] text-on-surface-variant">lock</span>
+        <span class="font-label-sm text-xs text-on-surface-variant">Admin Login</span>
+      `;
+    }
+  }
+
+  renderAdminView() {
+    const authWrapper = document.getElementById('admin-auth-wrapper');
+    const dashboardWrapper = document.getElementById('admin-dashboard-wrapper');
+
+    if (!authWrapper || !dashboardWrapper) return;
+
+    if (!this.isAdmin) {
+      authWrapper.classList.remove('hidden');
+      dashboardWrapper.classList.add('hidden');
+    } else {
+      authWrapper.classList.add('hidden');
+      dashboardWrapper.classList.remove('hidden');
+
+      // Update counters — load fresh from Supabase for admin
+      this.loadAllThoughtsForAdmin().then(allThoughts => {
+        this.thoughts = allThoughts;
+        const pendingCount = allThoughts.filter(t => t.status === 'pending').length;
+        document.getElementById('admin-count-photos').textContent = this.photos.length;
+        document.getElementById('admin-count-certs').textContent = this.certificates.length;
+        document.getElementById('admin-count-pending').textContent = pendingCount;
+        this.renderAdminThoughtsTable();
+      });
+
+      this.renderAdminPhotosTable();
+      this.renderAdminCertsTable();
+    }
+  }
+
+  renderAdminPhotosTable() {
+    const tbody = document.getElementById('admin-photos-table-body');
+    if (!tbody) return;
+
+    tbody.innerHTML = this.photos.map(p => `
+      <tr class="border-b border-outline-variant/15 text-sm text-on-surface">
+        <td class="py-2.5 px-3">
+          <img src="${p.imageUrl}" alt="" class="w-12 h-9 object-cover rounded bg-surface-container"/>
+        </td>
+        <td class="py-2.5 px-3 font-medium text-on-surface">${p.title}</td>
+        <td class="py-2.5 px-3 text-xs font-mono text-primary">${p.album}</td>
+        <td class="py-2.5 px-3 text-xs text-on-surface-variant">${p.uploadedAt}</td>
+        <td class="py-2.5 px-3 text-right">
+          <button class="text-xs text-error hover:underline cursor-pointer" onclick="window.app.deletePhoto('${p._id}')">Delete</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  async deletePhoto(id) {
+    if (confirm('Delete this photo from the ISEP archive?')) {
+      const ok = await sbDelete('photos', id);
+      if (ok) {
+        this.photos = this.photos.filter(p => p._id !== id);
+        this.renderGalleryGrid(this.photos);
+        this.renderAdminPhotosTable();
+        this.updateHomeStats();
+        this.showToast('Photo removed.');
+      } else {
+        this.showToast('Delete failed. Check console.');
+      }
+    }
+  }
+
+  renderAdminCertsTable() {
+    const tbody = document.getElementById('admin-certs-table-body');
+    if (!tbody) return;
+
+    tbody.innerHTML = this.certificates.map(c => `
+      <tr class="border-b border-outline-variant/15 text-sm text-on-surface">
+        <td class="py-2.5 px-3 font-semibold text-primary">${c.recipientName}</td>
+        <td class="py-2.5 px-3">${c.title}</td>
+        <td class="py-2.5 px-3 text-xs font-mono text-on-surface-variant">${c.issueDate}</td>
+        <td class="py-2.5 px-3 text-right">
+          <button class="text-xs text-error hover:underline cursor-pointer" onclick="window.app.deleteCertificate('${c._id}')">Delete</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  async deleteCertificate(id) {
+    if (confirm('Delete this certificate record?')) {
+      const ok = await sbDelete('certificates', id);
+      if (ok) {
+        this.certificates = this.certificates.filter(c => c._id !== id);
+        this.renderCertificatesGrid(this.certificates);
+        this.renderAdminCertsTable();
+        this.updateHomeStats();
+        this.showToast('Certificate record deleted.');
+      } else {
+        this.showToast('Delete failed. Check console.');
+      }
+    }
+  }
+
+
+  renderAdminThoughtsTable() {
+    const tbody = document.getElementById('admin-thoughts-table-body');
+    if (!tbody) return;
+
+    tbody.innerHTML = this.thoughts.map(t => {
+      let statusBadge = '<span class="px-2 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-400 font-medium">Pending</span>';
+      if (t.status === 'approved') statusBadge = '<span class="px-2 py-0.5 rounded text-xs bg-green-500/20 text-green-400 font-medium">Approved</span>';
+      if (t.status === 'hidden') statusBadge = '<span class="px-2 py-0.5 rounded text-xs bg-gray-500/20 text-gray-400 font-medium">Hidden</span>';
+
+      return `
+        <tr class="border-b border-outline-variant/15 text-sm text-on-surface">
+          <td class="py-3 px-3 font-medium text-primary">${t.name}</td>
+          <td class="py-3 px-3 text-xs italic text-on-surface-variant max-w-sm">"${t.message}"</td>
+          <td class="py-3 px-3 text-xs text-primary font-mono">${'★'.repeat(t.rating || 5)}</td>
+          <td class="py-3 px-3">${statusBadge}</td>
+          <td class="py-3 px-3 text-right space-x-2">
+            ${t.status !== 'approved' ? `
+              <button class="text-xs text-primary hover:underline cursor-pointer" onclick="window.app.setThoughtStatus('${t._id}', 'approved')">Approve</button>
+            ` : `
+              <button class="text-xs text-on-surface-variant hover:underline cursor-pointer" onclick="window.app.setThoughtStatus('${t._id}', 'hidden')">Hide</button>
+            `}
+            <button class="text-xs text-error hover:underline cursor-pointer" onclick="window.app.deleteThought('${t._id}')">Delete</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  async setThoughtStatus(id, newStatus) {
+    const saved = await sbUpdate('thoughts', id, { status: newStatus });
+    if (saved) {
+      const t = this.thoughts.find(item => item._id === id);
+      if (t) t.status = newStatus;
+      this.renderThoughtsWall();
+      this.renderAdminThoughtsTable();
+      this.updateHomeStats();
+      this.showToast(`Thought marked as ${newStatus}.`);
+    } else {
+      this.showToast('Update failed. Check console.');
+    }
+  }
+
+  async deleteThought(id) {
+    if (confirm('Permanently delete this submitted thought?')) {
+      const ok = await sbDelete('thoughts', id);
+      if (ok) {
+        this.thoughts = this.thoughts.filter(t => t._id !== id);
+        this.renderThoughtsWall();
+        this.renderAdminThoughtsTable();
+        this.updateHomeStats();
+        this.showToast('Thought deleted.');
+      } else {
+        this.showToast('Delete failed. Check console.');
+      }
+    }
+  }
+
+  // --- Notification Toast ---
+  showToast(msg) {
+    const toast = document.getElementById('archive-toast');
+    if (!toast) return;
+
+    toast.querySelector('.toast-text').textContent = msg;
+    toast.classList.remove('translate-y-24', 'opacity-0');
+    toast.classList.add('translate-y-0', 'opacity-100');
+
+    setTimeout(() => {
+      toast.classList.add('translate-y-24', 'opacity-0');
+      toast.classList.remove('translate-y-0', 'opacity-100');
+    }, 4000);
+  }
+
+  renderAll() {
+    this.renderGalleryGrid(this.photos);
+    this.renderCertificatesGrid(this.certificates);
+    this.renderThoughtsWall();
+    this.updateHomeStats();
+  }
+}
+
+// Global launch on load
+document.addEventListener('DOMContentLoaded', () => {
+  window.app = new IsepArchiveApp();
+});

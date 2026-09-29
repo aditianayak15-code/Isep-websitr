@@ -1,0 +1,314 @@
+/* ISEP Batch 1 Archive - Official Curated Gallery Stylesheet */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;0,800;1,500;1,600;1,700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --color-surface: #131316;
+  --color-surface-dim: #0e0e11;
+  --color-surface-container-low: #1b1b1e;
+  --color-surface-container: #1f1f22;
+  --color-surface-container-high: #2a2a2d;
+  --color-surface-container-highest: #353438;
+  --color-primary: #f3be65;
+  --color-primary-container: #d4a24c;
+  --color-on-primary: #432c00;
+  --color-on-surface: #e4e1e5;
+  --color-on-surface-variant: #d3c4b2;
+  --color-outline: #9c8f7e;
+  --color-secondary-fixed: #e6e2d9;
+  --color-on-secondary-fixed: #1c1c16;
+  --glow-color: rgba(243, 190, 101, 0.18);
+}
+
+/* Exhibit Modes */
+body.mode-warm-amber {
+  --glow-color: rgba(243, 190, 101, 0.22);
+}
+
+body.mode-moonlight {
+  --color-primary: #a5c4e0;
+  --color-primary-container: #5d89b3;
+  --glow-color: rgba(165, 196, 224, 0.2);
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: #131316;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a2d;
+  border-radius: 4px;
+  border: 1px solid rgba(212, 162, 76, 0.2);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #d4a24c;
+}
+
+/* Smooth Page Transitions */
+.view-section {
+  display: none;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.view-section.active {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Tactile Parchment Paper Style */
+.parchment-card {
+  background-color: #e6e2d9;
+  color: #1c1c16;
+  background-image: radial-gradient(#d3c4b2 0.75px, transparent 0.75px);
+  background-size: 16px 16px;
+  position: relative;
+  box-shadow: 0 16px 36px -8px rgba(0, 0, 0, 0.65), 0 0 20px -2px rgba(212, 162, 76, 0.12);
+}
+
+/* Corner Reticle Decoration */
+.corner-reticle {
+  position: relative;
+}
+.corner-reticle::before,
+.corner-reticle::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+  z-index: 5;
+}
+.corner-reticle::before {
+  top: 6px;
+  left: 6px;
+  border-top: 1.5px solid var(--color-primary);
+  border-left: 1.5px solid var(--color-primary);
+}
+.corner-reticle::after {
+  bottom: 6px;
+  right: 6px;
+  border-bottom: 1.5px solid var(--color-primary);
+  border-right: 1.5px solid var(--color-primary);
+}
+
+/* Ambient Museum Lighting Glows */
+.museum-spotlight {
+  background: radial-gradient(circle at 50% 0%, var(--glow-color) 0%, transparent 70%);
+}
+
+/* Corkboard Texture */
+.corkboard-canvas {
+  background-color: #111114;
+  background-image: 
+    radial-gradient(circle at 25px 25px, rgba(212, 162, 76, 0.05) 2%, transparent 0%),
+    radial-gradient(circle at 75px 75px, rgba(255, 255, 255, 0.02) 2%, transparent 0%);
+  background-size: 100px 100px;
+}
+
+/* Pushpin and Washi Tape */
+.washi-tape {
+  position: absolute;
+  height: 18px;
+  width: 72px;
+  background-color: rgba(212, 162, 76, 0.28);
+  backdrop-filter: blur(2px);
+  border-left: 2px dashed rgba(255,255,255,0.4);
+  border-right: 2px dashed rgba(255,255,255,0.4);
+  z-index: 10;
+}
+
+.pushpin {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6), inset 0 2px 3px rgba(255, 255, 255, 0.4);
+}
+
+/* View-Only Protection: Disable Casual Copy/Download */
+.view-only-image {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  pointer-events: auto;
+}
+
+.view-only-watermark {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 120px,
+    rgba(212, 162, 76, 0.04) 120px,
+    rgba(212, 162, 76, 0.04) 240px
+  );
+  z-index: 20;
+}
+
+/* Interactive Star Rating */
+.star-rating-btn {
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+.star-rating-btn:hover {
+  transform: scale(1.2);
+}
+.star-rating-btn.active {
+  color: #f3be65;
+}
+
+/* Glassmorphism Navigation */
+.nav-glass {
+  background: rgba(19, 19, 22, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(212, 162, 76, 0.15);
+}
+
+.perspective-container {
+  perspective: 1400px;
+}
+
+/* ===================================================
+   ADMIN PORTAL & RESPONSIVE FORM LAYOUT
+   =================================================== */
+
+/* Universal Box-Sizing */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* 1. Admin Portal Page Viewport Layout */
+.admin-page,
+#view-admin-portal {
+  width: 100%;
+  min-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+/* 2. Admin Modal Overlay & Viewport-Safe Centering */
+.admin-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 2rem 1rem 4rem 1rem;
+  box-sizing: border-box;
+  background-color: rgba(19, 19, 22, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.admin-modal-overlay.hidden {
+  display: none !important;
+}
+
+.admin-modal-overlay:not(.hidden) {
+  display: block !important;
+}
+
+/* Dialog centering wrapper: aligns from top with safe padding, never pushes top offscreen */
+.admin-modal-dialog {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* Sticky Modal Header so top title/words and close button never vanish on scroll */
+.modal-header-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background-color: var(--color-surface-container-highest, #353438);
+  border-top-left-radius: 0.75rem;
+  border-top-right-radius: 0.75rem;
+}
+
+/* 3. Central Form Container Specification */
+.form-container {
+  width: 100%;
+  max-width: 700px;
+  margin: 0 auto;
+  height: auto;
+  box-sizing: border-box;
+  position: relative;
+}
+
+/* Form Elements Containment */
+.form-container input,
+.form-container select,
+.form-container textarea,
+.form-container .upload-box {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Form Action Buttons Container */
+.form-container .form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  width: 100%;
+  box-sizing: border-box;
+  flex-wrap: wrap;
+  padding-top: 0.75rem;
+}
+
+.form-container .form-actions button {
+  box-sizing: border-box;
+}
+
+/* 4. Responsive Breakpoints (Desktop, Tablet, Mobile) */
+@media (max-width: 768px) {
+  .admin-modal-overlay {
+    padding: 1rem 0.75rem;
+  }
+
+  .admin-modal-dialog {
+    padding: 0.5rem 0;
+  }
+
+  .form-container {
+    max-width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .form-container form {
+    padding: 1.25rem 1rem !important;
+  }
+
+  .form-container .form-actions {
+    flex-direction: column-reverse;
+    gap: 0.5rem;
+  }
+
+  .form-container .form-actions button {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+}
