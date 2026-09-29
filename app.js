@@ -323,6 +323,24 @@ class IsepArchiveApp {
         heroCard.style.transform = 'rotateY(-10deg) rotateX(6deg) rotateZ(2deg) scale(1)';
       });
     }
+
+    // Scroll-reveal for group photo section
+    const groupPhoto = document.getElementById('group-photo-reveal');
+    if (groupPhoto) {
+      groupPhoto.style.opacity = '0';
+      groupPhoto.style.transform = 'translateY(48px)';
+      groupPhoto.style.transition = 'opacity 0.85s cubic-bezier(0.22,1,0.36,1), transform 0.85s cubic-bezier(0.22,1,0.36,1)';
+      const revealObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            groupPhoto.style.opacity = '1';
+            groupPhoto.style.transform = 'translateY(0)';
+            revealObserver.unobserve(groupPhoto);
+          }
+        });
+      }, { threshold: 0.12 });
+      revealObserver.observe(groupPhoto);
+    }
   }
 
   // --- Home Stats Sync ---
@@ -402,10 +420,17 @@ class IsepArchiveApp {
       const aspect = isWide ? 'aspect-[16/10]' : 'aspect-[4/3]';
 
       return `
-        <article class="${colSpan} flex flex-col bg-surface-container rounded-xl overflow-hidden shadow-[0_16px_36px_-8px_rgba(0,0,0,0.65)] hover:shadow-[0_20px_40px_-4px_rgba(212,162,76,0.22)] transition-all group border border-outline-variant/15">
+        <article class="${colSpan} flex flex-col bg-surface-container rounded-xl overflow-hidden shadow-[0_16px_36px_-8px_rgba(0,0,0,0.65)] hover:shadow-[0_20px_40px_-4px_rgba(212,162,76,0.22)] transition-all group border border-outline-variant/15 cursor-pointer" onclick="window.app.openLightbox('${p._id}')">
           <div class="relative bg-surface-container-lowest p-space-sm corner-reticle view-only-image">
             <div class="overflow-hidden rounded-lg ${aspect} bg-surface-container-high relative">
               <img alt="${p.title}" class="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-700 brightness-95 group-hover:brightness-100 select-none pointer-events-none" src="${p.imageUrl}" loading="lazy" draggable="false"/>
+              <!-- Click-to-view overlay -->
+              <div class="absolute inset-0 bg-surface/0 group-hover:bg-surface/20 transition-all duration-300 flex items-center justify-center">
+                <div class="opacity-0 group-hover:opacity-100 transition-all duration-300 bg-surface-container-lowest/90 backdrop-blur-md rounded-full px-4 py-2 flex items-center gap-2 shadow-xl border border-primary/30">
+                  <span class="material-symbols-outlined text-primary text-[20px]">open_in_full</span>
+                  <span class="font-label-md text-label-md text-primary font-semibold uppercase tracking-wider">View Photo</span>
+                </div>
+              </div>
               <div class="absolute bottom-space-xs right-space-xs px-2 py-0.5 rounded bg-surface/85 backdrop-blur-md text-[10px] font-mono tracking-widest text-primary/80 uppercase">
                 ${p.album}
               </div>
@@ -429,10 +454,10 @@ class IsepArchiveApp {
                 <span class="material-symbols-outlined text-[16px] text-primary">visibility</span>
                 View-Only Public Access
               </span>
-              <button class="flex items-center gap-1 font-label-md text-label-md uppercase tracking-wider text-primary hover:text-primary-fixed transition-colors cursor-pointer" onclick="window.app.openLightbox('${p._id}')">
+              <span class="flex items-center gap-1 font-label-md text-label-md uppercase tracking-wider text-primary">
                 <span>View Full Screen</span>
                 <span class="material-symbols-outlined text-[16px]">fullscreen</span>
-              </button>
+              </span>
             </div>
           </div>
         </article>

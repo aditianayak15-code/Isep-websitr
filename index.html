@@ -189,13 +189,12 @@
             <img 
               src="assets/images/hero-bg-5.jpg" 
               alt="ISEP Batch 1 Cohort" 
-              class="w-full h-full object-cover object-center scale-105 filter blur-[1.5px] opacity-[0.20]"
+              class="w-full h-full object-cover object-center scale-105 opacity-[0.42]"
             />
-            <!-- Layered dark & radial gradients for crystal-clear text readability -->
-            <div class="absolute inset-0 bg-gradient-to-r from-surface via-surface/85 to-surface/65"></div>
-            <div class="absolute inset-0 bg-gradient-to-t from-surface via-transparent to-surface/90"></div>
-            <div class="absolute inset-0 bg-gradient-to-b from-surface/70 via-transparent to-surface"></div>
-            <div class="absolute inset-0 bg-[radial-gradient(circle_at_75%_40%,rgba(var(--color-primary-rgb),0.12),transparent_70%)]"></div>
+            <!-- Subtle overlay for text readability while keeping image visible -->
+            <div class="absolute inset-0 bg-gradient-to-r from-surface/90 via-surface/60 to-surface/30"></div>
+            <div class="absolute inset-0 bg-gradient-to-t from-surface via-transparent to-surface/50"></div>
+            <div class="absolute inset-0 bg-[radial-gradient(circle_at_75%_40%,rgba(var(--color-primary-rgb),0.10),transparent_70%)]"></div>
           </div>
 
           <div class="absolute -top-40 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-gradient-to-b from-primary/15 via-primary/5 to-transparent rounded-full blur-[140px] pointer-events-none"></div>
@@ -453,6 +452,42 @@
         </section>
 
       </div>
+
+      <!-- =========== GROUP PHOTO REVEAL SECTION (scroll-revealed) =========== -->
+      <div id="group-photo-reveal" class="relative w-full overflow-hidden" style="min-height:520px;">
+        <!-- Full bleed cohort photo -->
+        <img
+          src="assets/images/hero-bg-5.jpg"
+          alt="ISEP Batch 1 – Full Cohort Group Photo"
+          class="w-full h-full object-cover object-center absolute inset-0 pointer-events-none select-none"
+          style="height:100%;min-height:520px;"
+          draggable="false"
+        />
+        <!-- Gradient overlay for readability -->
+        <div class="absolute inset-0 bg-gradient-to-t from-surface/95 via-surface/40 to-transparent pointer-events-none"></div>
+        <div class="absolute inset-0 bg-gradient-to-b from-surface/60 via-transparent to-transparent pointer-events-none"></div>
+        <!-- Caption box -->
+        <div class="relative z-10 flex flex-col items-center justify-end h-full pb-12 px-gutter lg:px-margin" style="min-height:520px;">
+          <div class="max-w-2xl text-center">
+            <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-surface-container-lowest/80 backdrop-blur-md border border-primary/30 shadow-md mb-4">
+              <span class="material-symbols-outlined text-primary text-[16px]">groups</span>
+              <span class="font-label-sm text-label-sm uppercase tracking-widest text-primary font-semibold">ISEP Batch 1 • Official Cohort Photo</span>
+            </div>
+            <h2 class="font-headline-lg text-headline-lg text-on-surface font-serif font-bold drop-shadow-lg">
+              The Inaugural Fellows
+            </h2>
+            <p class="font-body-md text-body-md text-on-surface-variant mt-2 max-w-lg mx-auto drop-shadow">
+              A shared chapter of growth, mentorship, and lasting friendships — preserved forever in the ISEP archive.
+            </p>
+            <a href="#gallery" data-path="gallery" class="inline-flex items-center gap-2 mt-5 px-6 py-2.5 rounded-lg bg-primary-container hover:bg-primary text-on-primary-container font-semibold transition-all shadow-lg hover:-translate-y-0.5">
+              <span class="material-symbols-outlined text-[18px]">photo_library</span>
+              <span>Browse Full Gallery</span>
+            </a>
+          </div>
+        </div>
+      </div>
+      <!-- end group photo reveal -->
+
     </section>
 
     <!-- ================= VIEW 2: PHOTO GALLERY ================= -->
