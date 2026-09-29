@@ -257,6 +257,24 @@ class IsepArchiveApp {
 
   // --- Exhibit Mode Toggle ---
   initExhibitMode() {
+    // Restore saved theme preference if present
+    const savedMode = localStorage.getItem('isep_theme_mode');
+    if (savedMode === 'moonlight') {
+      this.exhibitMode = 'moonlight';
+      document.body.classList.remove('mode-warm-amber');
+      document.body.classList.add('mode-moonlight');
+      document.querySelectorAll('.exhibit-mode-label').forEach(el => {
+        el.textContent = 'Moonlight Blue';
+      });
+    } else {
+      this.exhibitMode = 'warm-amber';
+      document.body.classList.remove('mode-moonlight');
+      document.body.classList.add('mode-warm-amber');
+      document.querySelectorAll('.exhibit-mode-label').forEach(el => {
+        el.textContent = 'Warm Amber';
+      });
+    }
+
     document.querySelectorAll('.toggle-exhibit-lighting').forEach(btn => {
       btn.addEventListener('click', () => {
         if (this.exhibitMode === 'warm-amber') {
@@ -267,6 +285,12 @@ class IsepArchiveApp {
           this.exhibitMode = 'warm-amber';
           document.body.classList.remove('mode-moonlight');
           document.body.classList.add('mode-warm-amber');
+        }
+
+        try {
+          localStorage.setItem('isep_theme_mode', this.exhibitMode);
+        } catch (e) {
+          console.warn('Could not save theme preference:', e);
         }
 
         document.querySelectorAll('.exhibit-mode-label').forEach(el => {

@@ -3,32 +3,132 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;0,800;1,500;1,600;1,700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-  --color-surface: #131316;
-  --color-surface-dim: #0e0e11;
-  --color-surface-container-low: #1b1b1e;
-  --color-surface-container: #1f1f22;
-  --color-surface-container-high: #2a2a2d;
-  --color-surface-container-highest: #353438;
-  --color-primary: #f3be65;
-  --color-primary-container: #d4a24c;
-  --color-on-primary: #432c00;
-  --color-on-surface: #e4e1e5;
-  --color-on-surface-variant: #d3c4b2;
-  --color-outline: #9c8f7e;
-  --color-secondary-fixed: #e6e2d9;
-  --color-on-secondary-fixed: #1c1c16;
-  --glow-color: rgba(243, 190, 101, 0.18);
+  /* === WARM AMBER (default) === */
+  --color-surface:                    #131316;
+  --color-surface-rgb:                19, 19, 22;
+  --color-surface-dim:                #0e0e11;
+  --color-surface-dim-rgb:            14, 14, 17;
+  --color-surface-container-lowest:   #0e0e11;
+  --color-surface-container-lowest-rgb: 14, 14, 17;
+  --color-surface-container-low:      #1b1b1e;
+  --color-surface-container-low-rgb:  27, 27, 30;
+  --color-surface-container:          #1f1f22;
+  --color-surface-container-rgb:      31, 31, 34;
+  --color-surface-container-high:     #2a2a2d;
+  --color-surface-container-high-rgb: 42, 42, 45;
+  --color-surface-container-highest:  #353438;
+  --color-surface-container-highest-rgb: 53, 52, 56;
+  --color-surface-variant:            #353438;
+  --color-surface-variant-rgb:        53, 52, 56;
+  --color-surface-bright:             #39393c;
+  --color-surface-bright-rgb:         57, 57, 60;
+
+  --color-primary:                    #f3be65;
+  --color-primary-rgb:                243, 190, 101;
+  --color-primary-container:          #d4a24c;
+  --color-primary-container-rgb:      212, 162, 76;
+  --color-primary-fixed:              #ffdeac;
+  --color-primary-fixed-rgb:          255, 222, 172;
+  --color-on-primary:                 #432c00;
+  --color-on-primary-rgb:             67, 44, 0;
+  --color-on-primary-container:       #563a00;
+  --color-on-primary-container-rgb:   86, 58, 0;
+
+  --color-tertiary:                   #eec067;
+  --color-tertiary-rgb:               238, 192, 103;
+  --color-tertiary-fixed:             #ffdea6;
+  --color-tertiary-fixed-rgb:         255, 222, 166;
+  --color-tertiary-container:         #d0a44e;
+  --color-tertiary-container-rgb:     208, 164, 78;
+  --color-on-tertiary-container:      #543b00;
+  --color-on-tertiary-container-rgb:  84, 59, 0;
+  --color-inverse-primary:            #7e5700;
+  --color-inverse-primary-rgb:        126, 87, 0;
+
+  --color-on-surface:                 #e4e1e5;
+  --color-on-surface-rgb:             228, 225, 229;
+  --color-on-surface-variant:         #d3c4b2;
+  --color-on-surface-variant-rgb:     211, 196, 178;
+  --color-outline:                    #9c8f7e;
+  --color-outline-rgb:                156, 143, 126;
+  --color-outline-variant:            #4f4537;
+  --color-outline-variant-rgb:        79, 69, 55;
+  --color-on-secondary-fixed:         #1c1c16;
+  --color-on-secondary-fixed-rgb:     28, 28, 22;
+
+  --glow-color:                       rgba(243, 190, 101, 0.18);
 }
 
-/* Exhibit Modes */
+body {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* === EXHIBIT MODES === */
+
+/* Warm Amber — golden museum lighting */
 body.mode-warm-amber {
-  --glow-color: rgba(243, 190, 101, 0.22);
+  --color-primary:                    #f3be65;
+  --color-primary-rgb:                243, 190, 101;
+  --color-primary-container:          #d4a24c;
+  --color-primary-container-rgb:      212, 162, 76;
+  --color-primary-fixed:              #ffdeac;
+  --color-primary-fixed-rgb:          255, 222, 172;
+  --color-on-primary:                 #432c00;
+  --color-on-primary-rgb:             67, 44, 0;
+  --color-on-primary-container:       #563a00;
+  --color-on-primary-container-rgb:   86, 58, 0;
+  --color-tertiary:                   #eec067;
+  --color-tertiary-rgb:               238, 192, 103;
+  --color-tertiary-fixed:             #ffdea6;
+  --color-tertiary-fixed-rgb:         255, 222, 166;
+  --color-tertiary-container:         #d0a44e;
+  --color-tertiary-container-rgb:     208, 164, 78;
+  --color-on-tertiary-container:      #543b00;
+  --color-on-tertiary-container-rgb:  84, 59, 0;
+  --color-inverse-primary:            #7e5700;
+  --color-inverse-primary-rgb:        126, 87, 0;
+  --color-on-surface:                 #e4e1e5;
+  --color-on-surface-rgb:             228, 225, 229;
+  --color-on-surface-variant:         #d3c4b2;
+  --color-on-surface-variant-rgb:     211, 196, 178;
+  --color-outline:                    #9c8f7e;
+  --color-outline-rgb:                156, 143, 126;
+  --color-outline-variant:            #4f4537;
+  --color-outline-variant-rgb:        79, 69, 55;
+  --glow-color:                       rgba(243, 190, 101, 0.22);
 }
 
+/* Moonlight Blue — cool luminous blue-silver palette */
 body.mode-moonlight {
-  --color-primary: #a5c4e0;
-  --color-primary-container: #5d89b3;
-  --glow-color: rgba(165, 196, 224, 0.2);
+  --color-primary:                    #80b3e6;
+  --color-primary-rgb:                128, 179, 230;
+  --color-primary-container:          #3d7ab3;
+  --color-primary-container-rgb:      61, 122, 179;
+  --color-primary-fixed:              #cce4f7;
+  --color-primary-fixed-rgb:          204, 228, 247;
+  --color-on-primary:                 #001d36;
+  --color-on-primary-rgb:             0, 29, 54;
+  --color-on-primary-container:       #d2e4ff;
+  --color-on-primary-container-rgb:   210, 228, 255;
+  --color-tertiary:                   #7ac2dc;
+  --color-tertiary-rgb:               122, 194, 220;
+  --color-tertiary-fixed:             #b8e6f7;
+  --color-tertiary-fixed-rgb:         184, 230, 247;
+  --color-tertiary-container:         #33768f;
+  --color-tertiary-container-rgb:     51, 118, 143;
+  --color-on-tertiary-container:      #bce9ff;
+  --color-on-tertiary-container-rgb:  188, 233, 255;
+  --color-inverse-primary:            #20649e;
+  --color-inverse-primary-rgb:        32, 100, 158;
+  --color-on-surface:                 #dce8f0;
+  --color-on-surface-rgb:             220, 232, 240;
+  --color-on-surface-variant:         #a8c4d8;
+  --color-on-surface-variant-rgb:     168, 196, 216;
+  --color-outline:                    #7a9ab0;
+  --color-outline-rgb:                122, 154, 176;
+  --color-outline-variant:            #233f54;
+  --color-outline-variant-rgb:        35, 63, 84;
+  --glow-color:                       rgba(128, 179, 230, 0.28);
 }
 
 /* Custom Scrollbars */
@@ -107,7 +207,7 @@ body.mode-moonlight {
 .corkboard-canvas {
   background-color: #111114;
   background-image: 
-    radial-gradient(circle at 25px 25px, rgba(212, 162, 76, 0.05) 2%, transparent 0%),
+    radial-gradient(circle at 25px 25px, rgba(var(--color-primary-rgb), 0.07) 2%, transparent 0%),
     radial-gradient(circle at 75px 75px, rgba(255, 255, 255, 0.02) 2%, transparent 0%);
   background-size: 100px 100px;
 }
@@ -117,7 +217,7 @@ body.mode-moonlight {
   position: absolute;
   height: 18px;
   width: 72px;
-  background-color: rgba(212, 162, 76, 0.28);
+  background-color: rgba(var(--color-primary-rgb), 0.35);
   backdrop-filter: blur(2px);
   border-left: 2px dashed rgba(255,255,255,0.4);
   border-right: 2px dashed rgba(255,255,255,0.4);
@@ -150,8 +250,8 @@ body.mode-moonlight {
     45deg,
     transparent,
     transparent 120px,
-    rgba(212, 162, 76, 0.04) 120px,
-    rgba(212, 162, 76, 0.04) 240px
+    rgba(var(--color-primary-rgb), 0.04) 120px,
+    rgba(var(--color-primary-rgb), 0.04) 240px
   );
   z-index: 20;
 }
@@ -164,7 +264,7 @@ body.mode-moonlight {
   transform: scale(1.2);
 }
 .star-rating-btn.active {
-  color: #f3be65;
+  color: var(--color-primary);
 }
 
 /* Glassmorphism Navigation */
@@ -172,7 +272,7 @@ body.mode-moonlight {
   background: rgba(19, 19, 22, 0.88);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(212, 162, 76, 0.15);
+  border-bottom: 1px solid rgba(var(--color-primary-rgb), 0.2);
 }
 
 .perspective-container {
