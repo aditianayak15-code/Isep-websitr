@@ -114,6 +114,7 @@ class IsepArchiveApp {
     this.initExhibitMode();
     this.initViewOnlyProtection();
     this.initHeroParallax();
+    this.initHeroAlbumModal();
     this.initGallery();
     this.initCertificates();
     this.initThoughtsWall();
@@ -352,6 +353,144 @@ class IsepArchiveApp {
       }, { threshold: 0.12 });
       revealObserver.observe(groupPhoto);
     }
+  }
+
+  // --- Hero 3-Photo Album Modal Viewer ---
+  initHeroAlbumModal() {
+    const modal = document.getElementById('hero-album-modal');
+    if (!modal) return;
+
+    const albumPhotos = [
+      {
+        src: 'assets/images/photo-card-4.png',
+        album: 'Album: Memories',
+        tag: 'Inaugural Cohort',
+        title: 'Batch 1 Fellowship',
+        caption: 'Cherishing the shared moments, friendships, and milestones of our first batch.',
+        date: 'Conferred: August 2026'
+      },
+      {
+        src: 'assets/images/photo-card-3.jpg',
+        album: 'Album: Sessions',
+        tag: 'Hands-on Workshops',
+        title: 'Technical Sessions',
+        caption: 'Deep dive technical labs and engineering colloquiums conducted during Batch 1.',
+        date: 'Conferred: July 2026'
+      },
+      {
+        src: 'assets/images/photo-card-2.jpg',
+        album: 'Album: Team Activities',
+        tag: 'Colloquium Sprints',
+        title: 'Team Activities Sprint',
+        caption: 'Collaborative team problem-solving and peer development sprint sessions.',
+        date: 'Conferred: June 2026'
+      }
+    ];
+
+    let currentIndex = 0;
+
+    const imgEl = document.getElementById('hero-album-active-img');
+    const counterEl = document.getElementById('hero-album-counter');
+    const badgeEl = document.getElementById('hero-album-badge');
+    const tagEl = document.getElementById('hero-album-tag');
+    const titleEl = document.getElementById('hero-album-title');
+    const captionEl = document.getElementById('hero-album-caption');
+    const dateEl = document.getElementById('hero-album-date');
+    const prevBtn = document.getElementById('hero-album-prev-btn');
+    const nextBtn = document.getElementById('hero-album-next-btn');
+    const closeBtn = document.getElementById('close-hero-album-btn');
+    const closeXBtn = document.getElementById('close-hero-album-x-btn');
+    const thumbBtns = document.querySelectorAll('.hero-thumb-btn');
+
+    const renderPhoto = (index) => {
+      currentIndex = (index + albumPhotos.length) % albumPhotos.length;
+      const photo = albumPhotos[currentIndex];
+
+      if (imgEl) {
+        imgEl.style.opacity = '0';
+        setTimeout(() => {
+          imgEl.src = photo.src;
+          imgEl.alt = photo.title;
+          imgEl.style.opacity = '1';
+        }, 120);
+      }
+
+      if (counterEl) counterEl.textContent = `Photo ${currentIndex + 1} of ${albumPhotos.length}`;
+      if (badgeEl) badgeEl.textContent = photo.album;
+      if (tagEl) tagEl.textContent = photo.tag;
+      if (titleEl) titleEl.textContent = photo.title;
+      if (captionEl) captionEl.textContent = photo.caption;
+      if (dateEl) dateEl.textContent = photo.date;
+
+      thumbBtns.forEach((btn, idx) => {
+        if (idx === currentIndex) {
+          btn.className = 'hero-thumb-btn group relative rounded-lg overflow-hidden border-2 border-primary shadow-[0_0_12px_rgba(var(--color-primary-rgb),0.5)] scale-105 transition-all cursor-pointer p-0.5';
+        } else {
+          btn.className = 'hero-thumb-btn group relative rounded-lg overflow-hidden border-2 border-outline-variant/30 opacity-60 hover:opacity-100 hover:border-primary/50 transition-all cursor-pointer p-0.5';
+        }
+      });
+    };
+
+    const openModal = (initialIndex = 0) => {
+      renderPhoto(initialIndex);
+      modal.classList.remove('hidden');
+      document.body.classList.add('overflow-hidden');
+    };
+
+    const closeModal = () => {
+      modal.classList.add('hidden');
+      document.body.classList.remove('overflow-hidden');
+    };
+
+    // Attach click handlers to deck trigger cards/elements
+    document.querySelectorAll('[data-album-photo-index]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = parseInt(el.getAttribute('data-album-photo-index'), 10) || 0;
+        openModal(idx);
+      });
+    });
+
+    if (prevBtn) {
+      prevBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        renderPhoto(currentIndex - 1);
+      });
+    }
+
+    if (nextBtn) {
+      nextBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        renderPhoto(currentIndex + 1);
+      });
+    }
+
+    thumbBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.getAttribute('data-thumb-index'), 10) || 0;
+        renderPhoto(idx);
+      });
+    });
+
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (closeXBtn) closeXBtn.addEventListener('click', closeModal);
+
+    // Click backdrop to close
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        closeModal();
+      }
+    });
+
+    // Keyboard navigation (arrow keys & Escape)
+    document.addEventListener('keydown', (e) => {
+      if (modal.classList.contains('hidden')) return;
+      if (e.key === 'Escape') closeModal();
+      if (e.key === 'ArrowLeft') renderPhoto(currentIndex - 1);
+      if (e.key === 'ArrowRight') renderPhoto(currentIndex + 1);
+    });
   }
 
   // --- Home Stats Sync ---
