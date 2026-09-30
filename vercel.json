@@ -1,0 +1,6 @@
+{
+  "buildCommand": "npm --prefix isep-batch1/client install && npm --prefix isep-batch1/client run build",
+  "outputDirectory": "isep-batch1/client/dist",
+  "installCommand": "echo 'skip root install'",
+  "framework": null
+}
